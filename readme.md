@@ -38,6 +38,8 @@ We provide examples of using **USF** in `codebases/`. The Latent Diffusion on LS
 </div>
 
 ### Stable Diffusion
+
+Prompt: A person on a motorcycle high in the air
 <div style="display: flex; justify-content: space-around;">
 
   <div style="text-align: center;">
