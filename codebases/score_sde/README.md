@@ -1,6 +1,6 @@
 # Unified Sampling Framework (USF)
 
-This is the an simple and unorganized repository of the paper "A Unified Sampling Framework for Solver Searching of Diffusion Probabilistic Models". We provide some example solver schedules to reproduce our results in the paper.
+This is the repository of the paper "A Unified Sampling Framework for Solver Searching of Diffusion Probabilistic Models". We provide some example solver schedules to reproduce our results in the paper.
 
 ## Environment
 ```bash

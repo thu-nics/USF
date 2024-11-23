@@ -1,6 +1,6 @@
 # Unified Sampling Framework (USF)
 
-This is the an simple and unorganized repository of the paper "A Unified Sampling Framework for Solver Searching of Diffusion Probabilistic Models". We provide some example solver schedules to reproduce our results in the paper.
+This is the repository of the paper "A Unified Sampling Framework for Solver Searching of Diffusion Probabilistic Models". We provide some example solver schedules to reproduce our results in the paper.
 
 ## Dataset, Checkpoint and FID Stats
 Please check the config files in `configs/`.
@@ -23,11 +23,11 @@ python main.py --config configs/edm-cifar10-32x32-uncond-vp.yml --sample_type un
 
 We also implemented DPM-Solver++, UniPC, DPM-Solver-v3 in this code base. The command are as follows:
 ```bash
-python main.py --config configs/edm-cifar10-32x32-uncond-vp.yml --gpu 4 --exp exps/dpmsolver++ --sample --fid  --statistics_dir dpm_solver_v3/cifar10_ddpmpp_deep_continuous/0.0001_1200_4096 --number_of_samples 50000 --sample_type dpmsolver++ --timesteps 5
+python main.py --config configs/edm-cifar10-32x32-uncond-vp.yml --gpu 4 --exp exps/dpmsolver++ --sample --fid  --statistics_dir dpm_solver_v3/edm-cifar10-32x32-uncond-vp/0.002_80.0_1200_1024 --number_of_samples 50000 --sample_type dpmsolver++ --timesteps 5
 
 python main.py --config configs/edm-cifar10-32x32-uncond-vp.yml --gpu 4 --exp exps/unipc --sample --fid  --statistics_dir dpm_solver_v3/cifar10_ddpmpp_deep_continuous/0.0001_1200_4096 --number_of_samples 50000 --sample_type unipc --timesteps 5
 
-python main.py --config configs/edm-cifar10-32x32-uncond-vp.yml --gpu 4 --exp exps/dpmsolver_v3 --sample --fid  --statistics_dir dpm_solver_v3/cifar10_ddpmpp_deep_continuous/0.0001_1200_4096 --number_of_samples 50000 --sample_type dpmsolver_v3 --timesteps 5  --dpmsolver_v3_t_start 80 --dpmsolver_v3_t_end 0.002
+python main.py --config configs/edm-cifar10-32x32-uncond-vp.yml --gpu 4 --exp exps/dpmsolver_v3 --sample --fid  --statistics_dir dpm_solver_v3/edm-cifar10-32x32-uncond-vp/0.002_80.0_1200_1024 --number_of_samples 50000 --sample_type dpmsolver_v3 --timesteps 5  --dpmsolver_v3_t_start 80 --dpmsolver_v3_t_end 0.002
 ```
 Details about how to use these implement can be found in `main.py`'s args. **Notice**: The FID of baseline methods we report below are searched best settings (under their framework), so directly use the default settings might get worse FID performance. 
 

@@ -21,10 +21,8 @@ from datasets import get_dataset, data_transform, inverse_data_transform
 from functions.ckpt_util import load_model_for_sample
 from evaluate.fid_score import calculate_fid_given_paths
 from evaluate.fid_score_reduced import calculate_fid_given_paths_reduced
-from utils.noise_schedule import NoiseScheduleEDM, NoiseScheduleVP
-from utils.sample_utils import model_wrapper, model_wrapper_edm
-import torchvision.utils as tvu
 
+import torchvision.utils as tvu
 
 def picture_puzzle(x, p=4):
     assert x.shape[0]>=p*p
@@ -136,31 +134,30 @@ class Diffusion(object):
         )
         self.device = device
 
-        if hasattr(config, "model") and hasattr(config.model, "var_type"):
-            self.model_var_type = config.model.var_type
-            betas = get_beta_schedule(
-                beta_schedule=config.diffusion.beta_schedule,
-                beta_start=config.diffusion.beta_start,
-                beta_end=config.diffusion.beta_end,
-                num_diffusion_timesteps=config.diffusion.num_diffusion_timesteps,
-            )
-            betas = self.betas = torch.from_numpy(betas).float().to(self.device)
-            self.num_timesteps = betas.shape[0]
+        self.model_var_type = config.model.var_type
+        betas = get_beta_schedule(
+            beta_schedule=config.diffusion.beta_schedule,
+            beta_start=config.diffusion.beta_start,
+            beta_end=config.diffusion.beta_end,
+            num_diffusion_timesteps=config.diffusion.num_diffusion_timesteps,
+        )
+        betas = self.betas = torch.from_numpy(betas).float().to(self.device)
+        self.num_timesteps = betas.shape[0]
 
-        # alphas = 1.0 - betas
-        # alphas_cumprod = alphas.cumprod(dim=0)
-        # alphas_cumprod_prev = torch.cat(
-        #     [torch.ones(1).to(device), alphas_cumprod[:-1]], dim=0
-        # )
-        # posterior_variance = (
-        #     betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
-        # )
-        # if self.model_var_type == "fixedlarge":
-        #     self.logvar = betas.log()
-        #     # torch.cat(
-        #     # [posterior_variance[1:2], betas[1:]], dim=0).log()
-        # elif self.model_var_type == "fixedsmall":
-        #     self.logvar = posterior_variance.clamp(min=1e-20).log()
+        alphas = 1.0 - betas
+        alphas_cumprod = alphas.cumprod(dim=0)
+        alphas_cumprod_prev = torch.cat(
+            [torch.ones(1).to(device), alphas_cumprod[:-1]], dim=0
+        )
+        posterior_variance = (
+            betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
+        )
+        if self.model_var_type == "fixedlarge":
+            self.logvar = betas.log()
+            # torch.cat(
+            # [posterior_variance[1:2], betas[1:]], dim=0).log()
+        elif self.model_var_type == "fixedsmall":
+            self.logvar = posterior_variance.clamp(min=1e-20).log()
             
         self.logger = logger
         self.model = None
@@ -293,8 +290,8 @@ class Diffusion(object):
             self.logger.info("NFE: {}".format(nfe))
             # with open("result.txt", "a") as f:
             #     print(f"type: {self.args.uni_sampler_decision_type if self.args.uni_sampler_decision_type is not None else self.args.sample_type} | NFE: {nfe} | FID: {fid}",file=f)
-            if self.args.fid_result_path:
-                torch.save(fid, self.args.fid_result_path)
+            # if self.args.fid_result_path:
+            #     torch.save(fid, self.args.fid_result_path)
             if not self.config.sampling.keep_samples:
                 print("Delete all samples...")
                 shutil.rmtree(self.args.image_folder)
@@ -358,7 +355,6 @@ class Diffusion(object):
         self.logger.info(result)
         torch.save({"samper_list":sampler_list, "result":result}, os.path.join(self.args.exp, "result.pth"))
 
-
     def sample_fid(self, model, classifier=None, total_n_samples=None, decisions=None):
         config = self.config
         if total_n_samples is None:
@@ -392,6 +388,10 @@ class Diffusion(object):
 
         with torch.no_grad():
             while(self.img_id<total_n_samples):
+                # torch.cuda.synchronize()
+                # start = torch.cuda.Event(enable_timing=True)
+                # end = torch.cuda.Event(enable_timing=True)
+                # start.record()
 
                 n = min(config.sampling.batch_size, total_n_samples-self.img_id)
                 if self.config.fixed_noise.enable:
@@ -424,10 +424,16 @@ class Diffusion(object):
 
                 # import ipdb; ipdb.set_trace()
                 x, classes = self.sample_image(x, model, classifier=classifier, base_samples=base_samples, decisions=decisions, guided_classes=classes)
-
+                # end.record()
+                # torch.cuda.synchronize()
+                # t_list.append(start.elapsed_time(end))
                 x = inverse_data_transform(config, x)
-
+                # puzzled_x = picture_puzzle(x, p=8)
+                # tvu.save_image(puzzled_x, os.path.join(self.args.image_folder, f"puzzled.png"))
+                # import ipdb; ipdb.set_trace()
                 self.save_samples(x, classes)
+        # # Remove the time evaluation of the first batch, because it contains extra initializations
+        # print('time / batch', np.mean(t_list[1:]) / 1000., 'std', np.std(t_list[1:]) / 1000.)
 
     def sample_sequence(self, model, classifier=None):
         config = self.config
@@ -521,8 +527,6 @@ class Diffusion(object):
             model_kwargs = {"y": base_samples["y"], "low_res": base_samples["low_res"]}
 
         if self.args.sample_type == "generalized":
-            if self.config.model.model_type == "SongUNet":
-                raise NotImplementedError
             if self.args.skip_type == "uniform":
                 skip = self.num_timesteps // self.args.timesteps
                 seq = range(0, self.num_timesteps, skip)
@@ -547,8 +551,6 @@ class Diffusion(object):
             xs, _ = generalized_steps(x, seq, model_fn, self.betas, eta=self.args.eta, classifier=classifier, is_cond_classifier=self.config.sampling.cond_class, classifier_scale=classifier_scale, **model_kwargs)
             x = xs[-1]
         elif self.args.sample_type == "ddpm_noisy":
-            if self.config.model.model_type == "SongUNet":
-                raise NotImplementedError
             if self.args.skip_type == "uniform":
                 skip = self.num_timesteps // self.args.timesteps
                 seq = range(0, self.num_timesteps, skip)
@@ -572,45 +574,40 @@ class Diffusion(object):
             xs, _ = ddpm_steps(x, seq, model_fn, self.betas, classifier=classifier, is_cond_classifier=self.config.sampling.cond_class, classifier_scale=classifier_scale, **model_kwargs)
             x = xs[-1]
         elif self.args.sample_type in ["dpmsolver", "dpmsolver++", "unipc"]:
-            if self.config.model.model_type != "SongUNet":
-                def model_fn(x, t, **model_kwargs):
-                    print("Call the model...")
-                    out = model(x, t, **model_kwargs)
-                    # If the model outputs both 'mean' and 'variance' (such as improved-DDPM and guided-diffusion),
-                    # We only use the 'mean' output for DPM-Solver, because DPM-Solver is based on diffusion ODEs.
-                    if "out_channels" in self.config.model.__dict__.keys():
-                        if self.config.model.out_channels == 6:
-                            out = torch.split(out, 3, dim=1)[0]
-                    return out
+            from dpm_solver.sampler import NoiseScheduleVP, model_wrapper
+            def model_fn(x, t, **model_kwargs):
+                print("Call the model...")
+                out = model(x, t, **model_kwargs)
+                # If the model outputs both 'mean' and 'variance' (such as improved-DDPM and guided-diffusion),
+                # We only use the 'mean' output for DPM-Solver, because DPM-Solver is based on diffusion ODEs.
+                if "out_channels" in self.config.model.__dict__.keys():
+                    if self.config.model.out_channels == 6:
+                        out = torch.split(out, 3, dim=1)[0]
+                return out
 
-                def classifier_fn(x, t, y, **classifier_kwargs):
-                    logits = classifier(x, t)
-                    log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
-                    return log_probs[range(len(logits)), y.view(-1)]
-
-                noise_schedule = NoiseScheduleVP(schedule=self.config.diffusion.beta_schedule, betas=self.betas)
-                model_fn_continuous = model_wrapper(
-                    model_fn,
-                    noise_schedule,
-                    time_input_type=self.config.sampling.time_input_type,
-                    model_type="noise",
-                    model_kwargs=model_kwargs,
-                    guidance_type="uncond" if classifier is None else "classifier",
-                    condition=model_kwargs["y"] if "y" in model_kwargs.keys() else None,
-                    guidance_scale=classifier_scale,
-                    classifier_fn=classifier_fn,
-                    classifier_kwargs={},
-                )
-            elif self.config.model.model_type == "SongUNet":
-                noise_schedule = NoiseScheduleEDM()
-                model_fn_continuous = model_wrapper_edm(model, noise_schedule)
-            if self.args.t_end is None:
-                if self.config.sampling.adaptive_tend:
-                    t_end = 1e-3 if self.args.timesteps<15 else 1e-4
-                else:
-                    t_end = None
+            def classifier_fn(x, t, y, **classifier_kwargs):
+                logits = classifier(x, t)
+                log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+                return log_probs[range(len(logits)), y.view(-1)]
+            # noise_schedule = NoiseScheduleVP(schedule=self.config.diffusion.beta_schedule, betas=self.betas)
+            noise_schedule = NoiseScheduleVP(schedule="discrete", betas=self.betas)
+            model_fn_continuous = model_wrapper(
+                model_fn,
+                noise_schedule,
+                time_input_type=self.config.sampling.time_input_type,
+                model_type="noise",
+                model_kwargs=model_kwargs,
+                guidance_type="uncond" if classifier is None else "classifier",
+                condition=model_kwargs["y"] if "y" in model_kwargs.keys() else None,
+                guidance_scale=classifier_scale,
+                classifier_fn=classifier_fn,
+                classifier_kwargs={},
+            )
+            
+            if self.config.sampling.adaptive_tend:
+                t_end = 1e-3 if self.args.timesteps<15 else 1e-4
             else:
-                t_end = self.args.t_end
+                t_end = None
             
             if self.args.sample_type in ["dpmsolver", "dpmsolver++"]:
                 if self.dpm_solver is None:
@@ -622,10 +619,11 @@ class Diffusion(object):
                         correcting_x0_fn="dynamic_thresholding" if self.args.thresholding else None,
                     )
                 else:
+                    # self.model = lambda x, t: model_fn(x, t.expand((x.shape[0])))
                     self.dpm_solver.model = lambda x, t: model_fn_continuous(x, t.expand((x.shape[0])))
-                
+            
                 x = self.dpm_solver.sample(
-                    x if self.config.model.model_type != "SongUNet" else x * self.args.t_start,
+                    x,
                     steps=(self.args.timesteps - 1 if self.args.denoise else self.args.timesteps),
                     order=self.args.dpm_solver_order,
                     skip_type=self.args.skip_type,
@@ -635,7 +633,6 @@ class Diffusion(object):
                     solver_type=self.args.dpm_solver_type,
                     atol=self.args.dpm_solver_atol,
                     rtol=self.args.dpm_solver_rtol,
-                    t_start=self.args.t_start,
                     t_end=t_end,
                     return_intermediate=self.args.return_intermediate,
                 )
@@ -654,7 +651,7 @@ class Diffusion(object):
                     self.uni_pc.model = lambda x, t: model_fn_continuous(x, t.expand((x.shape[0])))
 
                 x = self.uni_pc.sample(
-                    x if self.config.model.model_type != "SongUNet" else x * self.args.t_start,
+                    x,
                     steps=(self.args.timesteps - 1 if self.args.denoise else self.args.timesteps),
                     order=self.args.uni_pc_order,
                     skip_type=self.args.skip_type,
@@ -662,28 +659,28 @@ class Diffusion(object):
                     lower_order_final=self.args.lower_order_final,
                     disable_corrector=self.args.uni_pc_disable_corrector,
                     denoise_to_zero=self.args.denoise,
-                    return_intermediate=self.args.return_intermediate,
-                    t_start=self.args.t_start,
                     t_end=t_end,
+                    return_intermediate=self.args.return_intermediate,
                 )
         elif self.args.sample_type == "dpmsolver_v3":
-            from dpm_solver_v3.sampler import DPM_Solver_v3
-            if self.config.model.model_type != "SongUNet":
-                def model_fn(x, t, **model_kwargs):
-                    print("Call the model...")
-                    out = model(x, t, **model_kwargs)
-                    # If the model outputs both 'mean' and 'variance' (such as improved-DDPM and guided-diffusion),
-                    # We only use the 'mean' output for DPM-Solver, because DPM-Solver is based on diffusion ODEs.
-                    if "out_channels" in self.config.model.__dict__.keys():
-                        if self.config.model.out_channels == 6:
-                            out = torch.split(out, 3, dim=1)[0]
-                    return out
+            from dpm_solver_v3.sampler import NoiseScheduleVP, model_wrapper, DPM_Solver_v3
+            def model_fn(x, t, **model_kwargs):
+                print("Call the model...")
+                out = model(x, t, **model_kwargs)
+                # If the model outputs both 'mean' and 'variance' (such as improved-DDPM and guided-diffusion),
+                # We only use the 'mean' output for DPM-Solver, because DPM-Solver is based on diffusion ODEs.
+                if "out_channels" in self.config.model.__dict__.keys():
+                    if self.config.model.out_channels == 6:
+                        out = torch.split(out, 3, dim=1)[0]
+                return out
 
-                def classifier_fn(x, t, y, **classifier_kwargs):
-                    logits = classifier(x, t)
-                    log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
-                    return log_probs[range(len(logits)), y.view(-1)]
-                noise_schedule = NoiseScheduleVP(schedule=self.config.diffusion.beta_schedule, betas=self.betas)
+            def classifier_fn(x, t, y, **classifier_kwargs):
+                logits = classifier(x, t)
+                log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+                return log_probs[range(len(logits)), y.view(-1)]
+            # noise_schedule = NoiseScheduleVP(schedule=self.config.diffusion.beta_schedule, betas=self.betas)
+            noise_schedule = NoiseScheduleVP(schedule="discrete", betas=self.betas)
+            if self.dpm_solver_v3 is None:
                 model_fn_continuous = model_wrapper(
                     model_fn,
                     noise_schedule,
@@ -696,8 +693,9 @@ class Diffusion(object):
                     classifier_fn=classifier_fn,
                     classifier_kwargs={},
                 )
+                
                 self.dpm_solver_v3 = DPM_Solver_v3(
-                    self.config.sampling.statistics_dir,
+                    self.args.statistics_dir,
                     model_fn_continuous,
                     noise_schedule,
                     steps = (self.args.timesteps - 1 if self.args.denoise else self.args.timesteps),
@@ -708,32 +706,27 @@ class Diffusion(object):
                     dpmsolver_v3_t_start=self.args.dpmsolver_v3_t_start,
                     dpmsolver_v3_t_end=self.args.dpmsolver_v3_t_end,
                     t_end=self.args.t_end,
-                    t_start=self.args.t_start
                 )
             else:
-                # from dpm_solver_v3.sampler import NoiseScheduleEDM # this is float64 version of noise schedule
-                noise_schedule = NoiseScheduleEDM()
-                model_fn_continuous = model_wrapper_edm(model, noise_schedule)
-            if self.dpm_solver_v3 is None:    
-                self.dpm_solver_v3 = DPM_Solver_v3(
-                    self.config.sampling.statistics_dir,
-                    model_fn_continuous,
+                # noise_schedule = NoiseScheduleVP(schedule=self.config.diffusion.beta_schedule, betas=self.betas)
+                # noise_schedule = NoiseScheduleVP(schedule="discrete", betas=self.betas)
+                model_fn_continuous = model_wrapper(
+                    model_fn,
                     noise_schedule,
-                    steps = (self.args.timesteps - 1 if self.args.denoise else self.args.timesteps),
-                    skip_type=self.args.skip_type,
-                    correcting_x0_fn="dynamic_thresholding" if self.args.thresholding else None,
-                    degenerated=self.args.degenerated,
-                    device=self.device,
-                    dpmsolver_v3_t_start=self.args.dpmsolver_v3_t_start,
-                    dpmsolver_v3_t_end=self.args.dpmsolver_v3_t_end,
-                    t_end=self.args.t_end,
-                    t_start=self.args.t_start if self.args.t_start > 1 else 80
+                    time_input_type=self.config.sampling.time_input_type,
+                    model_type="noise",
+                    model_kwargs=model_kwargs,
+                    guidance_type="uncond" if classifier is None else "classifier",
+                    condition=model_kwargs["y"] if "y" in model_kwargs.keys() else None,
+                    guidance_scale=classifier_scale,
+                    classifier_fn=classifier_fn,
+                    classifier_kwargs={},
                 )
-            else:
+                # self.model = lambda x, t: model_fn(x, t.expand((x.shape[0])))
                 self.dpm_solver_v3.model = lambda x, t: model_fn_continuous(x, t.expand((x.shape[0])))
-
+            
             x = self.dpm_solver_v3.sample(
-                x if self.config.model.model_type != "SongUNet" else x * self.args.t_start,
+                x,
                 order=self.args.dpmsolver_v3_order,
                 p_pseudo=self.args.p_pseudo,
                 use_corrector=self.args.use_corrector,
@@ -744,23 +737,24 @@ class Diffusion(object):
             )
             
         elif self.args.sample_type == "unisampler":
-            if self.config.model.model_type != "SongUNet":
-                def model_fn(x, t, **model_kwargs):
-                    print("Call the model...")
-                    out = model(x, t, **model_kwargs)
-                    # If the model outputs both 'mean' and 'variance' (such as improved-DDPM and guided-diffusion),
-                    # We only use the 'mean' output for DPM-Solver, because DPM-Solver is based on diffusion ODEs.
-                    if "out_channels" in self.config.model.__dict__.keys():
-                        if self.config.model.out_channels == 6:
-                            out = torch.split(out, 3, dim=1)[0]
-                    return out
+            from uni_sampler.uni_sampler import NoiseScheduleVP, model_wrapper
+            def model_fn(x, t, **model_kwargs):
+                print("Call the model...")
+                out = model(x, t, **model_kwargs)
+                # If the model outputs both 'mean' and 'variance' (such as improved-DDPM and guided-diffusion),
+                # We only use the 'mean' output for DPM-Solver, because DPM-Solver is based on diffusion ODEs.
+                if "out_channels" in self.config.model.__dict__.keys():
+                    if self.config.model.out_channels == 6:
+                        out = torch.split(out, 3, dim=1)[0]
+                return out
 
-                def classifier_fn(x, t, y, **classifier_kwargs):
-                    logits = classifier(x, t)
-                    log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
-                    return log_probs[range(len(logits)), y.view(-1)]
-
-                noise_schedule = NoiseScheduleVP(schedule=self.config.diffusion.beta_schedule, betas=self.betas)
+            def classifier_fn(x, t, y, **classifier_kwargs):
+                logits = classifier(x, t)
+                log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+                return log_probs[range(len(logits)), y.view(-1)]
+            # noise_schedule = NoiseScheduleVP(schedule=self.config.diffusion.beta_schedule, betas=self.betas)
+            noise_schedule = NoiseScheduleVP(schedule="discrete", betas=self.betas)
+            if self.uni_sampler is None:
                 model_fn_continuous = model_wrapper(
                     model_fn,
                     noise_schedule,
@@ -773,28 +767,35 @@ class Diffusion(object):
                     classifier_fn=classifier_fn,
                     classifier_kwargs={},
                 )
-            elif self.config.model.model_type == "SongUNet":
-                noise_schedule = NoiseScheduleEDM()
-                model_fn_continuous = model_wrapper_edm(model, noise_schedule)
                 
-            if self.uni_sampler is None:
                 from uni_sampler.uni_sampler import uni_sampler
                 self.uni_sampler = uni_sampler(
                     model_fn_continuous,
                     noise_schedule,
                     correcting_x0_fn="dynamic_thresholding" if self.args.thresholding else None,
-                    statistics_dir=self.config.sampling.statistics_dir,
-                    dpmsolver_v3_t_start=self.args.dpmsolver_v3_t_start,
-                    dpmsolver_v3_t_end=self.args.dpmsolver_v3_t_end,
+                    statistics_dir=self.args.statistics_dir,
                 )
             else:
+                model_fn_continuous = model_wrapper(
+                    model_fn,
+                    noise_schedule,
+                    time_input_type=self.config.sampling.time_input_type,
+                    model_type="noise",
+                    model_kwargs=model_kwargs,
+                    guidance_type="uncond" if classifier is None else "classifier",
+                    condition=model_kwargs["y"] if "y" in model_kwargs.keys() else None,
+                    guidance_scale=classifier_scale,
+                    classifier_fn=classifier_fn,
+                    classifier_kwargs={},
+                )
                 self.uni_sampler.model = lambda x, t: model_fn_continuous(x, t.expand((x.shape[0])))
-            
             # get decisions
             if decisions is None:
                 from uni_sampler.utils import print_decisions
                 if self.args.load_decision is not None:
                     self.decisions = torch.load(self.args.load_decision)
+                    if isinstance(self.decisions, tuple):
+                        self.decisions = self.decisions[0]
                     if "decisions" in self.decisions.keys():
                         self.decisions = self.decisions["decisions"]
                 else: # no decision, no load decision, generate decision
@@ -809,9 +810,9 @@ class Diffusion(object):
             # compute NFE
             self.NFE = self.compute_nfe(decisions)
             # print(f"NFE: {self.NFE}")
-            t_start = self.decisions["timesteps"][0] if self.decisions is not None else self.args.t_start if self.args.t_start is not None else 80
+
             x = self.uni_sampler.sample(
-                x if self.config.model.model_type != "SongUNet" else x * t_start,
+                x,
                 self.decisions,
                 steps=(self.args.timesteps - 1 if self.args.denoise else self.args.timesteps),
                 order=self.args.uni_sampler_order,
@@ -882,6 +883,7 @@ class Diffusion(object):
         classifier_scale = self.config.sampling.classifier_scale if self.args.scale is None else self.args.scale
 
         model, classifier = load_model_for_sample(self.config, self.device, self.args.gpu)
+        from uni_sampler.uni_sampler import NoiseScheduleVP, model_wrapper
         def model_fn(x, t, **model_kwargs):
             print("Call the model...")
             out = model(x, t, **model_kwargs)

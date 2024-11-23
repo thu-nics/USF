@@ -189,7 +189,7 @@ def main():
     parser.add_argument(
         "--ckpt",
         type=str,
-        default="models/ldm/stable-diffusion-v1/sd-v1-4.ckpt",
+        default="checkpoints/ldm/stable-diffusion-v1/sd-v1-4.ckpt",
         help="path to checkpoint of model",
     )
     parser.add_argument(
@@ -298,6 +298,7 @@ def main():
     parser.add_argument("--lower_order_final", action="store_true", default=False)
     parser.add_argument("--thresholding", action="store_true", default=False)
     parser.add_argument("--return_intermediate", action="store_true")
+    parser.add_argument("--fid", action="store_true", default=False)
     opt = parser.parse_args()
 
     seed_everything(opt.seed)
@@ -344,9 +345,21 @@ def main():
     sample_path = os.path.join(opt.exp, "samples")
     os.makedirs(sample_path, exist_ok=True)
 
-    if opt.fixed_noise:
+    if opt.fixed_noise or config["fixed_noise"]["enable"]:
         noise_idx = 0
-        fixed_noise = torch.load("fixed_noise.pth").to(device)
+        fixed_noise = torch.load(config["fixed_noise"]["fixed_noise_path"]).to(device)
+
+    if not opt.from_file:
+        prompt = opt.prompt
+        if prompt is None:
+            prompt = ""
+        data = [batch_size * [prompt]]
+
+    else:
+        print(f"reading prompts from {opt.from_file}")
+        with open(opt.from_file, "r") as f:
+            data = f.read().splitlines()
+            data = list(chunk(data, batch_size))
 
     img_id = 0
     precision_scope = autocast if opt.precision == "autocast" else nullcontext
@@ -354,66 +367,76 @@ def main():
         with precision_scope("cuda"):
             with model.ema_scope():
                 while img_id < opt.n_samples:
-                    uc = None
-                    c = None
-                    shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
-                    n = min(batch_size, opt.n_samples - img_id)
-                    if opt.fixed_noise:
-                        start_code = fixed_noise[noise_idx:noise_idx+n].to(device)
-                    else:
-                        start_code = torch.randn([n, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
-                    if opt.method == "dpm_solver_v3":
-                        # batch_size, shape, conditioning, x_T, unconditional_conditioning
-                        samples, _ = sampler.sample(
-                            conditioning=c,
-                            batch_size=n,
-                            shape=shape,
-                            unconditional_conditioning=uc,
-                            x_T=start_code,
-                            use_corrector=opt.scale < 5.0,
-                        )
-                    elif opt.method == "unisampler":
-                        samples, _ = sampler.sample(
-                            conditioning=c,
-                            batch_size=n,
-                            shape=shape,
-                            unconditional_conditioning=uc,
-                            x_T=start_code,
-                        )
-                    else:
-                        samples, _ = sampler.sample(
-                            S=opt.steps,
-                            conditioning=c,
-                            batch_size=n,
-                            shape=shape,
-                            verbose=False,
-                            unconditional_guidance_scale=opt.scale,
-                            unconditional_conditioning=uc,
-                            eta=opt.ddim_eta,
-                            x_T=start_code,
-                        )
+                    for prompts in tqdm(data, desc="data"):
+                        uc = None
+                        if config.model.params.cond_stage_config == "__is_unconditional__":
+                            c = None
+                        else:
+                            if opt.scale != 1.0:
+                                uc = model.get_learned_conditioning(batch_size * [""])
+                            if isinstance(prompts, tuple):
+                                prompts = list(prompts)
+                            c = model.get_learned_conditioning(prompts)
+                        shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
+                        batch_num = min(batch_size, opt.n_samples - img_id)
+                        if opt.fixed_noise:
+                            start_code = fixed_noise[noise_idx:noise_idx+n].to(device)
+                        else:
+                            start_code = torch.randn([batch_num, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
+                        if opt.method == "dpm_solver_v3":
+                            samples, _ = sampler.sample(
+                                conditioning=c,
+                                batch_size=batch_num,
+                                shape=shape,
+                                unconditional_conditioning=uc,
+                                x_T=start_code,
+                                use_corrector=opt.scale < 5.0,
+                            )
+                        elif opt.method == "unisampler":
+                            samples, _ = sampler.sample(
+                                conditioning=c,
+                                batch_size=batch_num,
+                                shape=shape,
+                                unconditional_conditioning=uc,
+                                x_T=start_code,
+                            )
+                        else:
+                            samples, _ = sampler.sample(
+                                S=opt.steps,
+                                conditioning=c,
+                                batch_size=batch_num,
+                                shape=shape,
+                                verbose=False,
+                                unconditional_guidance_scale=opt.scale,
+                                unconditional_conditioning=uc,
+                                eta=opt.ddim_eta,
+                                x_T=start_code,
+                            )
 
-                    x_samples = model.decode_first_stage(samples)
-                    x_samples = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
-                    for i in range(x_samples.size(0)):
-                        path = os.path.join(sample_path, f"{img_id}.png")
-                        tvu.save_image(x_samples[i],path)
-                        img_id += 1
-                    print(f"Already generate {len(os.listdir(sample_path))} samples")
-    print("Begin to compute FID...")
-    fid = calculate_fid_given_paths(
-        (None, sample_path), 
-        batch_size=config["sampling"]["fid_batch_size"], 
-        device=device, 
-        dims=2048, 
-        num_workers=8, 
-        load_act=[config["sampling"]["fid_stats_dir"], None],
-        save_act=[config["sampling"]["fid_stats_dir"], None],
-    )
-    logging.info("FID: {}".format(fid))
-    if not config["sampling"]["keep_samples"]:
-        print("Delete all samples...")
-        shutil.rmtree(sample_path)
+                        x_samples = model.decode_first_stage(samples)
+                        x_samples = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
+                        for i in range(x_samples.size(0)):
+                            path = os.path.join(sample_path, f"{img_id}.png")
+                            tvu.save_image(x_samples[i],path)
+                            img_id += 1
+                        print(f"Already generate {len(os.listdir(sample_path))} samples")
+    if opt.fid:
+        print("Begin to compute FID...")
+        fid = calculate_fid_given_paths(
+            (None, sample_path), 
+            batch_size=config["sampling"]["fid_batch_size"], 
+            device=device, 
+            dims=2048, 
+            num_workers=8, 
+            load_act=[config["sampling"]["fid_stats_dir"], None],
+            save_act=[config["sampling"]["fid_stats_dir"], None],
+        )
+        logging.info("FID: {}".format(fid))
+        if not config["sampling"]["keep_samples"]:
+            print("Delete all samples...")
+            shutil.rmtree(sample_path)
+    else:
+        print(f"your samples are in {sample_path} !")
 
 if __name__ == "__main__":
     main()

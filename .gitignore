@@ -16,7 +16,7 @@ cifar10_ddpmpp_deep_continuous/
 imagenet256_guided/
 lsun_beds256/
 sd-v1-4/
-
+statistics/
 
 fixed_noise/
 # exceptions
