@@ -1,0 +1,68 @@
+parents:
+    rank_prob: 1.0
+    rank_bar: 15
+    absolute_bar: 1
+crossover:
+    prob: 0.3
+    deep_crossover_prob: 0.5
+mutate:
+    step_increase: 0.2
+    step_decrease: 0.2
+    timesteps:
+        evo_prob: 0.3
+        evo_sigma: 0.08
+        t_end_list: [0.002, 0.003]
+        t_start: 80 # 1.0 for linear noise schedule and 0.9946 for cosine noise schedule
+    taylor_orders:
+        evo_prob: 0.3
+        order_list: {
+          1: 0.2,
+          2: 0.4,
+          3: 0.3,
+          4: 0.1,
+        }
+    derivative_relaxation: # add noise to the relaxation coefficients
+        evo_prob: 0.3
+        evo_sigma: 0.03
+    derivative_estimation_order:
+        evo_prob: 0.3
+        order_list: {
+          1: 0.5,
+          2: 0.5,
+        }
+    prediction_types:
+        type_list: {
+          "noise_prediction": 0.3,
+          "data_prediction": 0.3,
+          "dpmsolver_v3_prediction": 0.4,
+        }
+        evo_prob: 0.3
+    corrector:
+        evo_prob: 0.3
+        type_list: {
+          no_corrector: 0.5,
+          pseudo: 0.5,
+          implicit: 0.0,
+        }
+        final_type_list: {
+          no_corrector: 1.0,
+          pseudo: 0.0,
+          implicit: 0.0,
+        }
+    afs:
+        evo_prob: 0.3
+        afs_list: {
+          "no_afs": 0.3,
+          "zero_x0": 0.3,
+          "average_x0": 0.4,
+        }
+    skip:
+        evo_prob: 0.3
+        evo_mu: 0
+        evo_sigma: 0.02
+metric:
+    indicator: 1
+
+total_nfe_range:
+    min: 3
+    max: 12

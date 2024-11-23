@@ -1,0 +1,51 @@
+data:
+    dataset: "CIFAR10"
+    image_size: 32
+    channels: 3
+    logit_transform: false
+    uniform_dequantization: false
+    gaussian_dequantization: false
+    random_flip: true
+    rescaled: true
+    num_workers: 4
+    num_classes: 10
+
+model:
+    ckpt_dir: "./checkpoints/edm-cifar10-32x32-uncond-vp.pth"
+    is_upsampling: false
+    img_resolution: 32
+    img_channels: 3
+    label_dim: 0
+    resample_filter: [1, 1]
+    embedding_type: "positional"
+    augment_dim: 9
+    dropout: 0.13
+    model_type: "SongUNet"
+    encoder_type: "standard"
+    channel_mult_noise: 1
+    model_channels: 128
+    channel_mult: [2, 2, 2]
+    ema: false
+
+sampling:
+    batch_size: 1024
+    last_only: false
+    fid_image_dir: 
+    fid_stats_dir: fid_stats/cifar10/fid_stats_cifar10_train_pytorch.npz # path to FID statistics
+    fid_total_samples: 50000
+    fid_batch_size: 256
+    cond_class: false
+    classifier_scale: 0.0
+    #------new------#
+    keep_samples: true
+    continuous: false # means whether continue sampling from a number of generated images
+    adaptive_tend: true
+    time_input_type: "3"
+    statistics_dir: "dpm_solver_v3/edm-cifar10-32x32-uncond-vp/0.002_80.0_1200_1024"
+    t_start: 80
+    t_end: 0.002
+    average_x0_path: "average_image.pth"
+
+fixed_noise: 
+    enable: false
+    path: ./fixed_noises/1024_3_32_32.pth # path to a set of fixed noise to decrease the randomness in evaluation

@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+vscode/
+temp/
+checkpoints/
+exp/
+exps/
+search_data/
+fid_stats/
+
+# EMS
+edm-cifar10-32x32-uncond-vp/
+cifar10_ddpmpp_deep_continuous/
+imagenet256_guided/
+lsun_beds256/
+sd-v1-4/
+
+
+fixed_noise/
+# exceptions
+!codebases/latent_diffusion/ldm/models/
