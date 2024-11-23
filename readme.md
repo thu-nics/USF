@@ -7,13 +7,13 @@ This is the repository of the paper "A Unified Sampling Framework for Solver Sea
 we propose a new sampling framework based on the exponential integral formulation that allows free choices of solver strategy at each step and design specific decisions for the framework.
 
 As shown above, our decision space contains 7 element:
-1. Discretization timesteps: We allow flexile choice within $[0,T]$.
-2. Prediction types: Different formulation of the ODE in different timesteps.
-3. Expansion order: The taylor expansion order when updating $x_t$ from $x_s$.
-4. Derivative estimation: We allow different estimation order for each derivatives, and choose some flexible relaxation coefficients on the derivatives.
-5. Corrector: Whether to use pseudo corrector or not. Corrector was proved to be useful on some timesteps, but not all of them.
-6. Analytical first step: With ground truth assumptions, we can save one NFE under very tight budget. At $t=T$, we simply let $\epsilon_\theta(x_T,T)=x_T$, or $x_\theta(x_T,T)=\overline{x_0}$
-7. Skip coefficients: This method is inspired by distillation method. We time decay coefficients on the skip connection part in the U-net.
+1. **Discretization timesteps**: We allow flexile choice within $[0,T]$.
+2. **Prediction types**: Different formulation of the ODE in different timesteps.
+3. **Expansion order**: The taylor expansion order when updating $x_t$ from $x_s$.
+4. **Derivative estimation**: We allow different estimation order for each derivatives, and choose some flexible relaxation coefficients on the derivatives.
+5. **Corrector**: Whether to use pseudo corrector or not. Corrector was proved to be useful on some timesteps, but not all of them.
+6. **Analytical first step**: With ground truth assumptions, we can save one NFE under very tight budget. At $t=T$, we simply let $\epsilon_\theta(x_T,T)=x_T$, or $x_\theta(x_T,T)=\overline{x_0}$
+7. **Skip coefficients**: This method is inspired by distillation method. We time decay coefficients on the skip connection part in the U-net.
 
 ## File structure
 The main code of **USF** is contained in `uni_sampler.py`.
