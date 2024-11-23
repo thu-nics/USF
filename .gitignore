@@ -19,5 +19,6 @@ sd-v1-4/
 statistics/
 
 fixed_noise/
+fixed_noises/
 # exceptions
 !codebases/latent_diffusion/ldm/models/
