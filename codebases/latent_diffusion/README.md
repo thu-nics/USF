@@ -1,4 +1,5 @@
-# DPM-Solver-v3 (Latent-Diffusion, Stable-Diffusion)
+# Unified Sampling Framework (USF)
+This repository contains code for USF. It is built upon the implementation of DPM-Solver-v3. 
 
 ## Preparation
 

@@ -92,6 +92,6 @@ sampling:
   fid_batch_size: 250
   keep_samples: false
 fixed_noise:
-  enable: True
+  enable: false
   fixed_noise_path: fixed_noise/1000_3_64_64.pth
 ###
